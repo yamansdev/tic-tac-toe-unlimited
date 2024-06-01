@@ -2,7 +2,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ImCross, ImRadioUnchecked } from "react-icons/im";
 import tw from "tailwind-styled-components";
-import { getBestMove, isMovesLeft } from "./minimax";
 
 interface DivProps {
   $hover: boolean;
@@ -13,7 +12,6 @@ export default function Home() {
   const Btn = tw.div<DivProps>`bg-slate-700 p-4 rounded-xl  relative  ${(p) =>
     p.$hover ? "cursor-pointer hover:opacity-75" : ""} ${(p) =>
     p.$firstMove ? "animate-pulse" : ""}`;
-
   const Cross = (
     <ImCross
       className="text-sky-400 text-6xl absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
@@ -30,17 +28,20 @@ export default function Home() {
   const [board, setBoard] = useState<JSX.Element[]>(
     Array.from(Array(9), (_, i) => <React.Fragment key={i}></React.Fragment>)
   );
-  const [gameState, setGameState] = useState(board);
-  const [boardMoves, setBoardMoves] = useState<number[]>([]);
-  const [boardState, setBoardState] = useState(Array(9).fill(null));
-  const [currentPlayer, setCurrentPlayer] = useState("X");
-  const [score, setScore] = useState({ X: 0, O: 0 });
-  const [showModal, setShowModal] = useState(false);
-  const [points, setPoints] = useState(0);
+  const [boardState, setBoardState] = useState<(string | null)[]>(
+    Array(9).fill(null)
+  );
+  const [playedMoves, setPlayedMoves] = useState<number[]>([]);
 
-  let winningEl: number[] = [];
+  const [currentPlayer, setCurrentPlayer] = useState<string | null>("X");
+  const [winningCells, setWinningCells] = useState<number[]>([]);
+  const [score, setScore] = useState<{ X: number; O: number }>({ X: 0, O: 0 });
+  const [points, setPoints] = useState<number>(0);
+  const [showWinnerModal, setShowWinnerModal] = useState<boolean>(false);
+  const [gameMode, setGameMode] = useState<"pvp" | "pvc">("pvp");
+  const [showModeModal, setShowModeModal] = useState<boolean>(true);
 
-  const winningBoard = [
+  const winningBoard: number[][] = [
     [0, 1, 2],
     [3, 4, 5],
     [6, 7, 8],
@@ -50,185 +51,225 @@ export default function Home() {
     [0, 4, 8],
     [2, 4, 6],
   ];
-  const boardRef = useRef<HTMLDivElement>(null);
 
+  const boardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (boardRef.current) {
       for (let i = 0; i < 9; i++) {
         setBoard((prevBoard) => [
           ...prevBoard,
           <Btn
-            onClick={() => makeMove(i, currentPlayer)}
             key={i}
+            onClick={() => {
+              handlePlay(i);
+            }}
             $hover={true}
-            $firstMove={boardMoves[0] === i && boardMoves.length > 6}
+            $firstMove={playedMoves[0] === i && playedMoves.length >= 6}
+            id={i.toString()}
             className={
-              winningEl.includes(i)
-                ? "animate-pulse border-green-400 border-2 "
-                : "" + "aspect-square"
+              "aspect-square" +
+              (winningCells.includes(i)
+                ? " animate-pulse border-2 border-green-500"
+                : "")
             }
           >
-            {gameState[i]}
+            {boardState[i] === "X"
+              ? Cross
+              : boardState[i] === "O"
+              ? Circle
+              : null}
           </Btn>,
         ]);
       }
     }
-
-    checkWin();
-    if (currentPlayer === "O") {
-      setTimeout(() => {
-        makeMove(getBestMove(boardState), "O");
-      }, 500);
-    }
+    console.log(points, score);
 
     return () => setBoard([]);
-  }, [boardState]);
+  }, [boardState, winningCells]);
 
-  // const makeMove = (index: number, player: string) => {
-  //   if (boardState[index] !== null) {
-  //     return;
-  //   }
+  const handlePlay = (i: number) => {
+    if (boardState[i] === null) {
+      setBoardState((prevBoardState) => {
+        const newBoardState = [...prevBoardState];
+        newBoardState[i] = currentPlayer;
+        return newBoardState;
+      });
+      setPlayedMoves((prevPlayedMoves) => [...prevPlayedMoves, i]);
+      setCurrentPlayer(currentPlayer === "X" ? "O" : "X");
+      setPoints((prevPoints) => prevPoints + 100);
+      if (playedMoves.length >= 6) {
+        removeFirstMove();
+      }
+    }
+  };
 
-  //   setGameState((prevState) => {
-  //     const newState = [...prevState];
-  //     newState[index] = player === "X" ? Cross : Circle;
-  //     return newState;
-  //   });
+  const getAvailableMoves = () => {
+    const availableMoves = [];
+    for (let i = 0; i < boardState.length; i++) {
+      if (boardState[i] === null) {
+        availableMoves.push(i);
+      }
+    }
+    return availableMoves;
+  };
+  const cpuMove = () => {
+    const availableMoves = getAvailableMoves();
+    let bestScore = -Infinity;
+    let bestMoves = [0];
+    const randomChance = 0.1; // 10% chance of making a random move
 
-  //   setBoardState((prevState) => {
-  //     const newState = [...prevState];
-  //     newState[index] = player;
-  //     return newState;
-  //   });
-  //   if (boardMoves.length > 6) {
-  //     removeMove();
-  //   }
-  //   setBoardMoves((prevMoves) => [...prevMoves, index]);
-  //   setCurrentPlayer(player === "X" ? "O" : "X");
-  //   setPoints((prevPoints) => prevPoints + 50);
-  // };
-
-  const makeMove = (index: number, player: string) => {
-    if (boardState[index] !== null) {
+    if (Math.random() < randomChance) {
+      const randomIndex = Math.floor(Math.random() * availableMoves.length);
+      const randomMove = availableMoves[randomIndex];
+      handlePlay(randomMove);
       return;
     }
+    for (let i = 0; i < availableMoves.length; i++) {
+      const move = availableMoves[i];
+      boardState[move] = "O";
+      const score = minimax(boardState, 0, false);
+      boardState[move] = null;
 
-    if (player === "X") {
-      // Human player's move
-      setGameState((prevState) => {
-        const newState = [...prevState];
-        newState[index] = Cross;
-        return newState;
-      });
+      if (score > bestScore) {
+        bestScore = score;
+        bestMoves = [move];
+      } else if (score === bestScore) {
+        bestMoves.push(move);
+      }
+    }
 
-      setBoardState((prevState) => {
-        const newState = [...prevState];
-        newState[index] = "X";
-        return newState;
-      });
+    const randomIndex = Math.floor(Math.random() * bestMoves.length);
+    const bestMove = bestMoves[randomIndex];
+
+    handlePlay(bestMove);
+  };
+
+  const minimax = (
+    board: (string | null)[],
+    depth: number,
+    isMaximizing: boolean
+  ) => {
+    const result = checkWinner();
+    if (result !== null) {
+      return result === "X" ? -10 + depth : 10 - depth;
+    }
+
+    if (getAvailableMoves().length === 0) {
+      return 0;
+    }
+
+    if (isMaximizing) {
+      let bestScore = -Infinity;
+      for (let i = 0; i < board.length; i++) {
+        if (board[i] === null) {
+          board[i] = "O";
+          const score = minimax(board, depth + 1, false);
+          board[i] = null;
+          bestScore = Math.max(bestScore, score);
+        }
+      }
+      return bestScore;
     } else {
-      // AI player's move
-      const bestMove = getBestMove(boardState);
-      setGameState((prevState) => {
-        const newState = [...prevState];
-        newState[bestMove] = Circle;
-        return newState;
-      });
-
-      setBoardState((prevState) => {
-        const newState = [...prevState];
-        newState[bestMove] = "O";
-        return newState;
-      });
-    }
-
-    setBoardMoves((prevMoves) => [...prevMoves, index]);
-    setCurrentPlayer(player === "X" ? "O" : "X");
-    setPoints((prevPoints) => prevPoints + 50);
-    let boardMovesCopy = [...boardMoves];
-    if (boardMovesCopy.length > 6) {
-      boardMovesCopy.shift();
-      removeMove();
+      let bestScore = Infinity;
+      for (let i = 0; i < board.length; i++) {
+        if (board[i] === null) {
+          board[i] = "X";
+          const score = minimax(board, depth + 1, true);
+          board[i] = null;
+          bestScore = Math.min(bestScore, score);
+        }
+      }
+      return bestScore;
     }
   };
-  const removeMove = () => {
-    setBoardState((prevState) =>
-      [...prevState].map((item, idx) => {
-        if (idx === boardMoves[0]) {
-          return null;
-        }
-        return item;
-      })
-    );
-    setGameState((prevState) =>
-      [...prevState].map((item, idx) => {
-        const Empty = <></>;
-        if (idx === boardMoves[0]) {
-          return Empty;
-        }
-        return item;
-      })
-    );
-    setBoardMoves((prevMoves) => [...prevMoves].filter((_, idx) => idx !== 0));
-  };
 
-  const isGameOver = (boardState: (string | null)[]) => {
+  const checkWinner = () => {
     for (let i = 0; i < winningBoard.length; i++) {
       const [a, b, c] = winningBoard[i];
       if (
         boardState[a] &&
         boardState[a] === boardState[b] &&
-        boardState[b] === boardState[c]
+        boardState[a] === boardState[c]
       ) {
-        winningEl = [a, b, c];
-
-        return true;
+        return boardState[a];
       }
     }
-    return false;
+    return null;
+  };
+
+  useEffect(() => {
+    if (gameMode === "pvc" && currentPlayer === "O") {
+      setTimeout(() => {
+        cpuMove();
+      }, 602);
+    }
+
+    checkWin();
+  }, [playedMoves]);
+
+  const removeFirstMove = () => {
+    setBoardState((prevBoardState) => {
+      const newBoardState = [...prevBoardState];
+      newBoardState[playedMoves[0]] = null;
+      return newBoardState;
+    });
+    setPlayedMoves((prevPlayedMoves) => prevPlayedMoves.slice(1));
   };
 
   const checkWin = () => {
-    if (isGameOver(boardState)) {
-      setTimeout(() => {
-        console.log(winningEl);
-
+    for (let i = 0; i < winningBoard.length; i++) {
+      const [a, b, c] = winningBoard[i];
+      if (
+        boardState[a] &&
+        boardState[a] === boardState[b] &&
+        boardState[a] === boardState[c]
+      ) {
+        setWinningCells([a, b, c]);
+        const winner = currentPlayer === "X" ? "O" : "X";
         setScore((prevScore) => ({
           ...prevScore,
-          [currentPlayer === "X" ? "O" : "X"]:
-            prevScore[currentPlayer === "X" ? "O" : "X"] + points,
+          [winner as "X" | "O"]: prevScore[winner as "X" | "O"] + points,
         }));
-        resetGame();
-      }, 1500);
-    }
-    if (score.X >= 1500) {
-      setShowModal(true);
-    }
-    if (score.O >= 1500) {
-      setShowModal(true);
+
+        setTimeout(() => {
+          handleReset();
+          return;
+        }, 600);
+      }
     }
   };
 
-  const resetGame = () => {
+  const handleReset = () => {
     setBoardState(Array(9).fill(null));
-    setGameState(
-      Array.from(Array(9), (_, i) => <React.Fragment key={i}></React.Fragment>)
-    );
-    setBoardMoves([]);
-    setCurrentPlayer("X");
-    setPoints(0);
+    setPlayedMoves([]);
+    setWinningCells([]);
+    setPoints(() => 0);
+    return;
   };
+
+  useEffect(() => {
+    if (score.X >= 3000 || score.O >= 3000) {
+      setCurrentPlayer(null);
+      setShowWinnerModal(true);
+    }
+  }, [score]);
 
   function WinnerModal() {
     return (
-      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-10">
         <div className="bg-[#061a32] p-8 rounded-lg">
           <h2 className="text-4xl font-bold mb-4">
             {currentPlayer === "X" ? "O" : "X"} Wins!
           </h2>
 
           <button
-            onClick={() => setShowModal(false)}
+            onClick={() => {
+              handleReset();
+              setScore({ X: 0, O: 0 });
+              setCurrentPlayer("X");
+              setShowModeModal(true);
+              setShowWinnerModal(false);
+            }}
             className="bg-blue-500 text-white px-4 py-2 rounded"
           >
             Close
@@ -238,8 +279,40 @@ export default function Home() {
     );
   }
 
+  function ModeModal() {
+    return (
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-10">
+        <div className="bg-[#061a32] p-8 rounded-lg">
+          <h2 className="text-4xl font-bold mb-4">Choose Game Mode</h2>
+          <div className="flex flex-col gap-4">
+            <button
+              onClick={() => {
+                setGameMode("pvp");
+                setShowModeModal(false);
+              }}
+              className="bg-blue-500 text-white px-4 py-2 rounded"
+            >
+              Player vs Player
+            </button>
+            <button
+              onClick={() => {
+                setGameMode("pvc");
+                setShowModeModal(false);
+              }}
+              className="bg-blue-500 text-white px-4 py-2 rounded"
+            >
+              Player vs CPU
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <main className="flex flex-col justify-center items-center h-screen text-2xl text-center p-8 gap-4 lg:gap-8 ">
+    <main className="flex flex-col justify-center items-center h-screen text-2xl text-center p-8 gap-4 lg:gap-8 relative">
+      {showWinnerModal && <WinnerModal />}
+      {showModeModal && <ModeModal />}
       <div className="grid grid-cols-3 gap-4 w-full max-w-[400px] mb-8 ">
         <Btn $hover={false} $firstMove={false}>
           TURN
@@ -267,7 +340,6 @@ export default function Home() {
           O<div>{score.O}</div>
         </Btn>
       </div>
-      {showModal && <WinnerModal />}
     </main>
   );
 }
